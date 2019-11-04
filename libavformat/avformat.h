@@ -1318,6 +1318,7 @@ typedef struct AVFormatInternal AVFormatInternal;
  * version bump.
  * sizeof(AVFormatContext) must not be used outside libav*, use
  * avformat_alloc_context() to create an AVFormatContext.
+ * 使用avformat_alloc_context()来创建AVFormatContext
  *
  * Fields can be accessed through AVOptions (av_opt*),
  * the name string used matches the associated command line parameter name and
@@ -2364,6 +2365,9 @@ int av_find_best_stream(AVFormatContext *ic,
  * stored in the file into frames and return one for each call. It will not
  * omit invalid data between valid frames so as to give the decoder the maximum
  * information possible for decoding.
+ * 返回一路流的下一个帧。
+ * 这个函数返回文件中存储的东西，不会验证是不是一个合法有效的帧。它会文件中的内容分割成帧，每次调用的时候都会返回一个。
+ * 它不会忽略不合法的数据，只是给decoder最多的信息用于解码。
  *
  * If pkt->buf is NULL, then the packet is valid until the next
  * av_read_frame() or until avformat_close_input(). Otherwise the packet
@@ -2372,14 +2376,22 @@ int av_find_best_stream(AVFormatContext *ic,
  * exactly one frame. For audio, it contains an integer number of frames if each
  * frame has a known fixed size (e.g. PCM or ADPCM data). If the audio frames
  * have a variable size (e.g. MPEG audio), then it contains one frame.
+ * 如果pkt->buf是NULL，那么这个packet是合法的，直到下一次av_read_frame()或者最终的avformat_close_input()。
+ * 否则这个packet是永远合法的。在两种case中，如果不再需要使用packet，必须使用av_packet_unref释放。
+ * 对于video，packet只包含一个frame。
+ * 对于audio，如果每一个frame有已知的固定的大小，它会包含一个整数个数的帧。（例如PCM或者ADPCM数据）
+ * 如果audio帧有一个可变大小（例如MPEG），那么它只会包含一个帧。
  *
  * pkt->pts, pkt->dts and pkt->duration are always set to correct
  * values in AVStream.time_base units (and guessed if the format cannot
  * provide them). pkt->pts can be AV_NOPTS_VALUE if the video format
  * has B-frames, so it is better to rely on pkt->dts if you do not
  * decompress the payload.
+ * pkt->pts, pkt->dts and pkt->duration始终会基于AVStream.time_base单位设置成正确的（假设format无法提供他们）。
+ * 如果video format有B-frame，pkt->pts可以是AV_NOPTS_VALUE，所以，如果你不解压payload，最好依赖pkt->dts
  *
  * @return 0 if OK, < 0 on error or end of file
+ * 如果正常返回0，如果出现错误，或者EOF，返回小于零的值
  */
 int av_read_frame(AVFormatContext *s, AVPacket *pkt);
 

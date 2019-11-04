@@ -1380,17 +1380,22 @@ typedef struct AVPacketSideData {
  * This structure stores compressed data. It is typically exported by demuxers
  * and then passed as input to decoders, or received as output from encoders and
  * then passed to muxers.
+ * 这个结构存储了压缩的数据。
+ * 通常由demuxer导出，然后作为输入传递给解码器；或者作为编码器的输出,然后传递给muxer。
  *
  * For video, it should typically contain one compressed frame. For audio it may
  * contain several compressed frames. Encoders are allowed to output empty
  * packets, with no compressed data, containing only side data
  * (e.g. to update some stream parameters at the end of encoding).
+ * 对于video，通常包含一个压缩的帧
+ * 对于audio，可能包含若干个压缩的帧
+ * Encoders被允许输出空的packet（没有压缩的数据），仅包含辅助数据（例如，在编码结束时更新一些参数）
  *
  * AVPacket is one of the few structs in FFmpeg, whose size is a part of public
  * ABI. Thus it may be allocated on stack and no new fields can be added to it
  * without libavcodec and libavformat major bump.
  *
- * The semantics of data ownership depends on the buf field.
+ * The semantics（语义） of data ownership depends on the buf field.
  * If it is set, the packet data is dynamically allocated and is
  * valid indefinitely until a call to av_packet_unref() reduces the
  * reference count to 0.
@@ -1400,6 +1405,8 @@ typedef struct AVPacketSideData {
  *
  * The side data is always allocated with av_malloc(), copied by
  * av_packet_ref() and freed by av_packet_unref().
+ * the side data通常由av_malloc()分配
+ * 使用av_packet_ref()复制，使用av_packet_unref()释放
  *
  * @see av_packet_ref
  * @see av_packet_unref
