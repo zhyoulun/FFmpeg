@@ -6,7 +6,7 @@
 
 void SaveFrame(AVFrame *pFrame, int width, int height, int iFrame);
 
-int main(int argc, char *argv[]) {
+int main() {
     // Initalizing these to NULL prevents segfaults!
     AVFormatContext   *pFormatCtx = NULL;
     int               i, videoStream;
@@ -35,7 +35,7 @@ int main(int argc, char *argv[]) {
         return -1; // Couldn't find stream information
     
     // Dump information about file onto standard error
-    av_dump_format(pFormatCtx, 0, argv[1], 0);
+    av_dump_format(pFormatCtx, 0, f, 0);
     
     // Find the first video stream
     videoStream=-1;
