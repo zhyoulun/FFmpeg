@@ -3096,7 +3096,7 @@ static VideoState *stream_open(const char *filename, AVInputFormat *iformat)
     is->audio_volume = startup_volume;
     is->muted = 0;
     is->av_sync_type = av_sync_type;
-    is->read_tid     = SDL_CreateThread(read_thread, "read_thread", is);
+    is->read_tid     = SDL_CreateThread(read_thread, "read_thread", is);//is是发给read_thread()函数的参数
     if (!is->read_tid) {
         av_log(NULL, AV_LOG_FATAL, "SDL_CreateThread(): %s\n", SDL_GetError());
 fail:

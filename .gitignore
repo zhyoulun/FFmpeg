@@ -37,4 +37,4 @@
 /lcov/
 /src
 /mapfile
-.vscode/
+.DS_Store
