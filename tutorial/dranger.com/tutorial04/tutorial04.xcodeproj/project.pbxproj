@@ -8,16 +8,14 @@
 
 /* Begin PBXBuildFile section */
 		B17093E72537DBE9002F07D2 /* main.c in Sources */ = {isa = PBXBuildFile; fileRef = B17093E62537DBE9002F07D2 /* main.c */; };
-		B17093F82537DC35002F07D2 /* libavutil.a in Frameworks */ = {isa = PBXBuildFile; fileRef = B17093EF2537DC35002F07D2 /* libavutil.a */; };
-		B17093F92537DC35002F07D2 /* libswscale.a in Frameworks */ = {isa = PBXBuildFile; fileRef = B17093F02537DC35002F07D2 /* libswscale.a */; };
-		B17093FA2537DC35002F07D2 /* libavdevice.a in Frameworks */ = {isa = PBXBuildFile; fileRef = B17093F12537DC35002F07D2 /* libavdevice.a */; };
-		B17093FB2537DC35002F07D2 /* libavformat.a in Frameworks */ = {isa = PBXBuildFile; fileRef = B17093F22537DC35002F07D2 /* libavformat.a */; };
-		B17093FC2537DC35002F07D2 /* libavcodec.a in Frameworks */ = {isa = PBXBuildFile; fileRef = B17093F32537DC35002F07D2 /* libavcodec.a */; };
-		B17093FD2537DC35002F07D2 /* libavfilter.a in Frameworks */ = {isa = PBXBuildFile; fileRef = B17093F42537DC35002F07D2 /* libavfilter.a */; };
-		B17093FE2537DC35002F07D2 /* libswresample.a in Frameworks */ = {isa = PBXBuildFile; fileRef = B17093F52537DC35002F07D2 /* libswresample.a */; };
-		B17093FF2537DC35002F07D2 /* libavresample.a in Frameworks */ = {isa = PBXBuildFile; fileRef = B17093F62537DC35002F07D2 /* libavresample.a */; };
-		B17094002537DC35002F07D2 /* libpostproc.a in Frameworks */ = {isa = PBXBuildFile; fileRef = B17093F72537DC35002F07D2 /* libpostproc.a */; };
 		B17094022537DC46002F07D2 /* SDL2.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B17094012537DC46002F07D2 /* SDL2.framework */; };
+		B194F463253AC13A00705684 /* libavutil.a in Frameworks */ = {isa = PBXBuildFile; fileRef = B194F45C253AC13A00705684 /* libavutil.a */; };
+		B194F464253AC13A00705684 /* libavdevice.a in Frameworks */ = {isa = PBXBuildFile; fileRef = B194F45D253AC13A00705684 /* libavdevice.a */; };
+		B194F465253AC13A00705684 /* libavfilter.a in Frameworks */ = {isa = PBXBuildFile; fileRef = B194F45E253AC13A00705684 /* libavfilter.a */; };
+		B194F466253AC13A00705684 /* libavformat.a in Frameworks */ = {isa = PBXBuildFile; fileRef = B194F45F253AC13A00705684 /* libavformat.a */; };
+		B194F467253AC13A00705684 /* libswresample.a in Frameworks */ = {isa = PBXBuildFile; fileRef = B194F460253AC13A00705684 /* libswresample.a */; };
+		B194F468253AC13A00705684 /* libavcodec.a in Frameworks */ = {isa = PBXBuildFile; fileRef = B194F461253AC13A00705684 /* libavcodec.a */; };
+		B194F469253AC13A00705684 /* libswscale.a in Frameworks */ = {isa = PBXBuildFile; fileRef = B194F462253AC13A00705684 /* libswscale.a */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -45,6 +43,13 @@
 		B17093F62537DC35002F07D2 /* libavresample.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libavresample.a; path = ../../../../../../../../usr/local/Cellar/ffmpeg/4.3.1_1/lib/libavresample.a; sourceTree = "<group>"; };
 		B17093F72537DC35002F07D2 /* libpostproc.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libpostproc.a; path = ../../../../../../../../usr/local/Cellar/ffmpeg/4.3.1_1/lib/libpostproc.a; sourceTree = "<group>"; };
 		B17094012537DC46002F07D2 /* SDL2.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SDL2.framework; path = ../../../../../../../../Library/Frameworks/SDL2.framework; sourceTree = "<group>"; };
+		B194F45C253AC13A00705684 /* libavutil.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libavutil.a; path = "../../../../../../software/ffmpeg-versions/ffmpeg-3.4-study/lib/libavutil.a"; sourceTree = "<group>"; };
+		B194F45D253AC13A00705684 /* libavdevice.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libavdevice.a; path = "../../../../../../software/ffmpeg-versions/ffmpeg-3.4-study/lib/libavdevice.a"; sourceTree = "<group>"; };
+		B194F45E253AC13A00705684 /* libavfilter.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libavfilter.a; path = "../../../../../../software/ffmpeg-versions/ffmpeg-3.4-study/lib/libavfilter.a"; sourceTree = "<group>"; };
+		B194F45F253AC13A00705684 /* libavformat.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libavformat.a; path = "../../../../../../software/ffmpeg-versions/ffmpeg-3.4-study/lib/libavformat.a"; sourceTree = "<group>"; };
+		B194F460253AC13A00705684 /* libswresample.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libswresample.a; path = "../../../../../../software/ffmpeg-versions/ffmpeg-3.4-study/lib/libswresample.a"; sourceTree = "<group>"; };
+		B194F461253AC13A00705684 /* libavcodec.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libavcodec.a; path = "../../../../../../software/ffmpeg-versions/ffmpeg-3.4-study/lib/libavcodec.a"; sourceTree = "<group>"; };
+		B194F462253AC13A00705684 /* libswscale.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libswscale.a; path = "../../../../../../software/ffmpeg-versions/ffmpeg-3.4-study/lib/libswscale.a"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -52,16 +57,14 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B194F463253AC13A00705684 /* libavutil.a in Frameworks */,
+				B194F464253AC13A00705684 /* libavdevice.a in Frameworks */,
+				B194F465253AC13A00705684 /* libavfilter.a in Frameworks */,
+				B194F466253AC13A00705684 /* libavformat.a in Frameworks */,
+				B194F467253AC13A00705684 /* libswresample.a in Frameworks */,
+				B194F468253AC13A00705684 /* libavcodec.a in Frameworks */,
+				B194F469253AC13A00705684 /* libswscale.a in Frameworks */,
 				B17094022537DC46002F07D2 /* SDL2.framework in Frameworks */,
-				B17093F82537DC35002F07D2 /* libavutil.a in Frameworks */,
-				B17093F92537DC35002F07D2 /* libswscale.a in Frameworks */,
-				B17093FA2537DC35002F07D2 /* libavdevice.a in Frameworks */,
-				B17093FB2537DC35002F07D2 /* libavformat.a in Frameworks */,
-				B17093FC2537DC35002F07D2 /* libavcodec.a in Frameworks */,
-				B17093FD2537DC35002F07D2 /* libavfilter.a in Frameworks */,
-				B17093FE2537DC35002F07D2 /* libswresample.a in Frameworks */,
-				B17093FF2537DC35002F07D2 /* libavresample.a in Frameworks */,
-				B17094002537DC35002F07D2 /* libpostproc.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -96,6 +99,13 @@
 		B17093EE2537DC35002F07D2 /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				B194F461253AC13A00705684 /* libavcodec.a */,
+				B194F45D253AC13A00705684 /* libavdevice.a */,
+				B194F45E253AC13A00705684 /* libavfilter.a */,
+				B194F45F253AC13A00705684 /* libavformat.a */,
+				B194F45C253AC13A00705684 /* libavutil.a */,
+				B194F460253AC13A00705684 /* libswresample.a */,
+				B194F462253AC13A00705684 /* libswscale.a */,
 				B17094012537DC46002F07D2 /* SDL2.framework */,
 				B17093F32537DC35002F07D2 /* libavcodec.a */,
 				B17093F12537DC35002F07D2 /* libavdevice.a */,
@@ -292,7 +302,7 @@
 					"$(inherited)",
 					"$(LOCAL_LIBRARY_DIR)/Frameworks",
 				);
-				HEADER_SEARCH_PATHS = /usr/local/Cellar/ffmpeg/4.3.1_1/include;
+				HEADER_SEARCH_PATHS = "/Users/zhangyoulun/software/ffmpeg-versions/ffmpeg-3.4-study/include";
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
 					/usr/local/Cellar/ffmpeg/4.3.1_1/lib,
@@ -309,7 +319,7 @@
 					"$(inherited)",
 					"$(LOCAL_LIBRARY_DIR)/Frameworks",
 				);
-				HEADER_SEARCH_PATHS = /usr/local/Cellar/ffmpeg/4.3.1_1/include;
+				HEADER_SEARCH_PATHS = "/Users/zhangyoulun/software/ffmpeg-versions/ffmpeg-3.4-study/include";
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
 					/usr/local/Cellar/ffmpeg/4.3.1_1/lib,
