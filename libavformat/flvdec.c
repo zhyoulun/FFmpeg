@@ -36,6 +36,7 @@
 #include "internal.h"
 #include "avio_internal.h"
 #include "flv.h"
+#include "hevc.h"
 
 #define VALIDATE_INDEX_TS_THRESH 2500
 
