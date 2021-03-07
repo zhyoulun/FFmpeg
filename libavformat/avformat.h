@@ -1987,6 +1987,7 @@ const char *avformat_configuration(void);
 const char *avformat_license(void);
 
 /**
+ * 
  * Initialize libavformat and register all the muxers, demuxers and
  * protocols. If you do not call this function, then you can select
  * exactly which formats you want to support.
@@ -2050,6 +2051,7 @@ void avformat_free_context(AVFormatContext *s);
 const AVClass *avformat_get_class(void);
 
 /**
+ * 
  * Add a new stream to a media file.
  *
  * When demuxing, it is called by the demuxer in read_header(). If the
@@ -2119,6 +2121,7 @@ AVProgram *av_new_program(AVFormatContext *s, int id);
 
 
 /**
+ * 
  * Allocate an AVFormatContext for an output format.
  * avformat_free_context() can be used to free the context and
  * everything allocated by the framework within it.
