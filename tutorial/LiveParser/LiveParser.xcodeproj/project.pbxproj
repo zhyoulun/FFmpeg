@@ -16,6 +16,7 @@
 		B13DB0492606504A0013C516 /* libswscale.a in Frameworks */ = {isa = PBXBuildFile; fileRef = B13DB041260650490013C516 /* libswscale.a */; };
 		B13DB04A2606504A0013C516 /* libavutil.a in Frameworks */ = {isa = PBXBuildFile; fileRef = B13DB042260650490013C516 /* libavutil.a */; };
 		B13DB04B2606504A0013C516 /* libswresample.a in Frameworks */ = {isa = PBXBuildFile; fileRef = B13DB0432606504A0013C516 /* libswresample.a */; };
+		B13DB04E26071ED60013C516 /* SDL2.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B13DB04D26071ED50013C516 /* SDL2.framework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -41,6 +42,7 @@
 		B13DB041260650490013C516 /* libswscale.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libswscale.a; path = ../../../build/ffmpeg/output/install/lib/libswscale.a; sourceTree = "<group>"; };
 		B13DB042260650490013C516 /* libavutil.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libavutil.a; path = ../../../build/ffmpeg/output/install/lib/libavutil.a; sourceTree = "<group>"; };
 		B13DB0432606504A0013C516 /* libswresample.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libswresample.a; path = ../../../build/ffmpeg/output/install/lib/libswresample.a; sourceTree = "<group>"; };
+		B13DB04D26071ED50013C516 /* SDL2.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SDL2.framework; path = ../../../../../../../Library/Frameworks/SDL2.framework; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -48,6 +50,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B13DB04E26071ED60013C516 /* SDL2.framework in Frameworks */,
 				B13DB0442606504A0013C516 /* libpostproc.a in Frameworks */,
 				B13DB0452606504A0013C516 /* libavdevice.a in Frameworks */,
 				B13DB0462606504A0013C516 /* libavcodec.a in Frameworks */,
@@ -90,6 +93,7 @@
 		B13DB03B260650490013C516 /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				B13DB04D26071ED50013C516 /* SDL2.framework */,
 				B13DB03E260650490013C516 /* libavcodec.a */,
 				B13DB03D260650490013C516 /* libavdevice.a */,
 				B13DB03F260650490013C516 /* libavfilter.a */,
@@ -284,6 +288,10 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(LOCAL_LIBRARY_DIR)/Frameworks",
+				);
 				PRODUCT_NAME = "$(TARGET_NAME)";
 			};
 			name = Debug;
@@ -292,6 +300,10 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(LOCAL_LIBRARY_DIR)/Frameworks",
+				);
 				PRODUCT_NAME = "$(TARGET_NAME)";
 			};
 			name = Release;
