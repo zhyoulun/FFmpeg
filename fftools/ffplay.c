@@ -1695,7 +1695,7 @@ display:
             else if (is->audio_st)
                 av_diff = get_master_clock(is) - get_clock(&is->audclk);
             av_log(NULL, AV_LOG_INFO,
-                   "%7.2f %s:%7.3f fd=%4d aq=%5dKB vq=%5dKB sq=%5dB f=%"PRId64"/%"PRId64"   \r",
+                   "%7.2f %s:%7.3f fd=%4d aq=%5dKB vq=%5dKB sq=%5dB volume=%5d f=%"PRId64"/%"PRId64"   \r",
                    get_master_clock(is),
                    (is->audio_st && is->video_st) ? "A-V" : (is->video_st ? "M-V" : (is->audio_st ? "M-A" : "   ")),
                    av_diff,
@@ -1703,6 +1703,7 @@ display:
                    aqsize / 1024,
                    vqsize / 1024,
                    sqsize,
+                   is->audio_volume,//展示当前音量，范围是[0,128]
                    is->video_st ? is->viddec.avctx->pts_correction_num_faulty_dts : 0,
                    is->video_st ? is->viddec.avctx->pts_correction_num_faulty_pts : 0);
             fflush(stdout);
@@ -2450,8 +2451,9 @@ static void sdl_audio_callback(void *opaque, Uint8 *stream, int len)
         if (!is->muted && is->audio_buf && is->audio_volume == SDL_MIX_MAXVOLUME)
             memcpy(stream, (uint8_t *)is->audio_buf + is->audio_buf_index, len1);
         else {
-            memset(stream, 0, len1);
-            if (!is->muted && is->audio_buf)
+            memset(stream, 0, len1);//先默认设置为静音
+            if (!is->muted && is->audio_buf)//如果没有静音，并且有音频数据，填充数据进去，并设置音量参数is->audio_volume
+                //api doc: https://wiki.libsdl.org/SDL_MixAudioFormat
                 SDL_MixAudioFormat(stream, (uint8_t *)is->audio_buf + is->audio_buf_index, AUDIO_S16SYS, len1, is->audio_volume);
         }
         len -= len1;
@@ -3271,12 +3273,12 @@ static void event_loop(VideoState *cur_stream)
             case SDLK_m:
                 toggle_mute(cur_stream);
                 break;
-            case SDLK_KP_MULTIPLY:
-            case SDLK_0:
+            case SDLK_KP_MULTIPLY://"*"乘号
+            case SDLK_0://0
                 update_volume(cur_stream, 1, SDL_VOLUME_STEP);
                 break;
-            case SDLK_KP_DIVIDE:
-            case SDLK_9:
+            case SDLK_KP_DIVIDE://"/"除号
+            case SDLK_9://9
                 update_volume(cur_stream, -1, SDL_VOLUME_STEP);
                 break;
             case SDLK_s: // S: Step to next frame
