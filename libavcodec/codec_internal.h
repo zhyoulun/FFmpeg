@@ -24,6 +24,7 @@
 #include "libavutil/attributes.h"
 #include "codec.h"
 #include "config.h"
+#include "config_components.h"
 
 /**
  * The codec is not known to be init-threadsafe (i.e. it might be unsafe

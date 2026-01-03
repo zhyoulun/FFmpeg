@@ -29,6 +29,7 @@
 #include <limits.h>
 #include <signal.h>
 #include <stdint.h>
+#include <time.h>
 
 #include "libavutil/avstring.h"
 #include "libavutil/channel_layout.h"
@@ -53,6 +54,12 @@
 
 #include <SDL.h>
 #include <SDL_thread.h>
+
+#if defined(__APPLE__) && defined(__MACH__)
+#include <CoreFoundation/CoreFoundation.h>
+#include <CoreGraphics/CoreGraphics.h>
+#include <CoreText/CoreText.h>
+#endif
 
 #include "cmdutils.h"
 #include "ffplay_renderer.h"
@@ -162,6 +169,7 @@ typedef struct Frame {
     AVRational sar;
     int uploaded;
     int flip_v;
+    char sei_text[256];
 } Frame;
 
 typedef struct FrameQueue {
@@ -685,6 +693,1178 @@ static void frame_queue_unref_item(Frame *vp)
     avsubtitle_free(&vp->sub);
 }
 
+static int jsonish_pretty_print(const char *in, char *out, int out_size)
+{
+    int i = 0, o = 0;
+    int indent = 0;
+    int in_string = 0;
+    int escaped = 0;
+
+    if (!out || out_size <= 0)
+        return 0;
+    out[0] = 0;
+    if (!in)
+        return 0;
+
+    for (i = 0; in[i] && o + 1 < out_size; i++) {
+        unsigned char c = (unsigned char)in[i];
+
+        if (in_string) {
+            out[o++] = (char)c;
+            if (escaped) {
+                escaped = 0;
+            } else if (c == '\\') {
+                escaped = 1;
+            } else if (c == '"') {
+                in_string = 0;
+            }
+            continue;
+        }
+
+        if (c == '"') {
+            in_string = 1;
+            out[o++] = (char)c;
+            continue;
+        }
+
+        if (c == ' ' || c == '\t' || c == '\r' || c == '\n')
+            continue;
+
+        if (c == '{' || c == '[') {
+            out[o++] = (char)c;
+            if (o + 1 >= out_size)
+                break;
+            out[o++] = '\n';
+            indent++;
+            while (indent > 0 && o + 2 * indent + 1 < out_size) {
+                int s;
+                for (s = 0; s < 2 * indent && o + 1 < out_size; s++)
+                    out[o++] = ' ';
+                break;
+            }
+            continue;
+        }
+
+        if (c == '}' || c == ']') {
+            if (indent > 0)
+                indent--;
+            if (o + 1 < out_size)
+                out[o++] = '\n';
+            if (o + 2 * indent + 1 < out_size) {
+                int s;
+                for (s = 0; s < 2 * indent && o + 1 < out_size; s++)
+                    out[o++] = ' ';
+            }
+            if (o + 1 < out_size)
+                out[o++] = (char)c;
+            continue;
+        }
+
+        if (c == ',') {
+            out[o++] = (char)c;
+            if (o + 1 >= out_size)
+                break;
+            out[o++] = '\n';
+            if (o + 2 * indent + 1 < out_size) {
+                int s;
+                for (s = 0; s < 2 * indent && o + 1 < out_size; s++)
+                    out[o++] = ' ';
+            }
+            continue;
+        }
+
+        if (c == ':') {
+            out[o++] = ':';
+            if (o + 1 < out_size)
+                out[o++] = ' ';
+            continue;
+        }
+
+        out[o++] = (char)c;
+    }
+
+    out[o] = 0;
+    return o;
+}
+
+static int overlay_is_word_char(unsigned char c)
+{
+    return (c >= '0' && c <= '9') ||
+           (c >= 'A' && c <= 'Z') ||
+           (c >= 'a' && c <= 'z') ||
+           c == '_';
+}
+
+static void overlay_rewrite_ts_us(char *buf, int buf_size)
+{
+    static const char *keys[] = { "t_us" };
+    char tmp[4096];
+    int out = 0;
+    const char *p;
+
+    if (!buf || buf_size <= 0)
+        return;
+    if (buf_size > (int)sizeof(tmp))
+        return;
+
+    p = buf;
+    while (*p && out + 1 < buf_size) {
+        const char *k = NULL;
+        int key_len = 0;
+        int key_i;
+        int copy_len;
+        const char *value_scan;
+        const char *token_start;
+        const char *digits_start;
+        const char *digits_end;
+        int64_t ts = 0;
+        int digits = 0;
+
+        for (key_i = 0; key_i < (int)FF_ARRAY_ELEMS(keys); key_i++) {
+            const char *cand = strstr(p, keys[key_i]);
+            while (cand) {
+                int cand_len = (int)strlen(keys[key_i]);
+                if ((cand == buf || !overlay_is_word_char((unsigned char)cand[-1])) &&
+                    !overlay_is_word_char((unsigned char)cand[cand_len])) {
+                    break;
+                }
+                cand = strstr(cand + 1, keys[key_i]);
+            }
+            if (cand) {
+                if (!k || cand < k) {
+                    k = cand;
+                    key_len = (int)strlen(keys[key_i]);
+                }
+            }
+        }
+
+        if (!k) {
+            copy_len = (int)strlen(p);
+            if (copy_len > buf_size - 1 - out)
+                copy_len = buf_size - 1 - out;
+            if (copy_len > 0) {
+                memcpy(tmp + out, p, (size_t)copy_len);
+                out += copy_len;
+            }
+            break;
+        }
+
+        value_scan = k + key_len;
+        while (*value_scan && (*value_scan == ' ' || *value_scan == '\t' || *value_scan == '\r' || *value_scan == '\n'))
+            value_scan++;
+        if (*value_scan == '"')
+            value_scan++;
+        while (*value_scan && (*value_scan == ' ' || *value_scan == '\t'))
+            value_scan++;
+        if (*value_scan == ':' || *value_scan == '=')
+            value_scan++;
+        while (*value_scan && (*value_scan == ' ' || *value_scan == '\t'))
+            value_scan++;
+
+        token_start = value_scan;
+        {
+            int had_value_quote = (*token_start == '"');
+            const char *digits_ptr = token_start + (had_value_quote ? 1 : 0);
+
+            digits_start = digits_ptr;
+            if (*digits_start == '-')
+                digits_start++;
+            if (*digits_start < '0' || *digits_start > '9') {
+                copy_len = (int)(k + key_len - p);
+                if (copy_len < 0)
+                    copy_len = 0;
+                if (copy_len > buf_size - 1 - out)
+                    copy_len = buf_size - 1 - out;
+                if (copy_len > 0) {
+                    memcpy(tmp + out, p, (size_t)copy_len);
+                    out += copy_len;
+                }
+                p = k + key_len;
+                continue;
+            }
+
+            digits_end = digits_start;
+            while (*digits_end >= '0' && *digits_end <= '9') {
+                digits++;
+                ts = ts * 10 + (int64_t)(*digits_end - '0');
+                digits_end++;
+            }
+            if (*digits_ptr == '-')
+                ts = -ts;
+
+            copy_len = (int)(token_start - p);
+            if (copy_len > buf_size - 1 - out)
+                copy_len = buf_size - 1 - out;
+            if (copy_len > 0) {
+                memcpy(tmp + out, p, (size_t)copy_len);
+                out += copy_len;
+            }
+            if (digits > 0) {
+                time_t sec = (time_t)(ts / 1000000);
+                struct tm tmv;
+                char tbuf[32];
+                size_t n = 0;
+                const char *token_end = digits_end;
+
+                if (had_value_quote && *token_end == '"')
+                    token_end++;
+
+                if (localtime_r(&sec, &tmv))
+                    n = strftime(tbuf, sizeof(tbuf), "%Y-%m-%d %H:%M:%S", &tmv);
+
+                if (n > 0 && out + 2 + (int)n + 1 < buf_size) {
+                    tmp[out++] = '"';
+                    memcpy(tmp + out, tbuf, n);
+                    out += (int)n;
+                    tmp[out++] = '"';
+                    p = token_end;
+                    continue;
+                }
+            }
+
+            copy_len = (int)(digits_end - token_start);
+            if (copy_len > buf_size - 1 - out)
+                copy_len = buf_size - 1 - out;
+            if (copy_len > 0) {
+                memcpy(tmp + out, token_start, (size_t)copy_len);
+                out += copy_len;
+            }
+            p = digits_end;
+        }
+    }
+
+    tmp[out] = 0;
+    av_strlcpy(buf, tmp, buf_size);
+}
+
+static int wrap_lines(const char *in, char lines[][256], int max_lines, int max_cols)
+{
+    int line = 0;
+    int col = 0;
+    int i;
+
+    if (!in || !lines || max_lines <= 0)
+        return 0;
+    if (max_cols < 8)
+        max_cols = 8;
+
+    for (line = 0; line < max_lines; line++)
+        lines[line][0] = 0;
+
+    line = 0;
+    col = 0;
+    for (i = 0; in[i] && line < max_lines; i++) {
+        unsigned char c = (unsigned char)in[i];
+
+        if (c == '\r')
+            continue;
+
+        if (c == '\n') {
+            lines[line][col] = 0;
+            line++;
+            col = 0;
+            continue;
+        }
+
+        if (col + 1 >= 256) {
+            lines[line][col] = 0;
+            line++;
+            col = 0;
+            if (line >= max_lines)
+                break;
+        }
+
+        if (col >= max_cols) {
+            lines[line][col] = 0;
+            line++;
+            col = 0;
+            if (line >= max_lines)
+                break;
+        }
+
+        lines[line][col++] = (char)c;
+        lines[line][col] = 0;
+    }
+
+    if (line < max_lines && lines[line][0])
+        return line + 1;
+    return FFMIN(line, max_lines);
+}
+
+static void glyph_5x7(char c, uint8_t out[7])
+{
+    int i;
+    for (i = 0; i < 7; i++)
+        out[i] = 0;
+
+    if (c >= 'a' && c <= 'z')
+        c = (char)(c - 'a' + 'A');
+
+    switch (c) {
+    case ' ':
+        break;
+    case '_':
+        out[6] = 0x1F;
+        break;
+    case '-':
+        out[3] = 0x1F;
+        break;
+    case '.':
+        out[6] = 0x04;
+        break;
+    case ',':
+        out[5] = 0x04;
+        out[6] = 0x08;
+        break;
+    case ':':
+        out[2] = 0x04;
+        out[4] = 0x04;
+        break;
+    case '"':
+        out[0] = 0x0A;
+        out[1] = 0x0A;
+        break;
+    case '\'':
+        out[0] = 0x04;
+        out[1] = 0x04;
+        break;
+    case '/':
+        out[0] = 0x01;
+        out[1] = 0x02;
+        out[2] = 0x04;
+        out[3] = 0x08;
+        out[4] = 0x10;
+        break;
+    case '\\':
+        out[0] = 0x10;
+        out[1] = 0x08;
+        out[2] = 0x04;
+        out[3] = 0x02;
+        out[4] = 0x01;
+        break;
+    case '{':
+        out[0] = 0x06;
+        out[1] = 0x04;
+        out[2] = 0x04;
+        out[3] = 0x08;
+        out[4] = 0x04;
+        out[5] = 0x04;
+        out[6] = 0x06;
+        break;
+    case '}':
+        out[0] = 0x0C;
+        out[1] = 0x04;
+        out[2] = 0x04;
+        out[3] = 0x02;
+        out[4] = 0x04;
+        out[5] = 0x04;
+        out[6] = 0x0C;
+        break;
+    case '[':
+        out[0] = 0x1F;
+        out[1] = 0x10;
+        out[2] = 0x10;
+        out[3] = 0x10;
+        out[4] = 0x10;
+        out[5] = 0x10;
+        out[6] = 0x1F;
+        break;
+    case ']':
+        out[0] = 0x1F;
+        out[1] = 0x01;
+        out[2] = 0x01;
+        out[3] = 0x01;
+        out[4] = 0x01;
+        out[5] = 0x01;
+        out[6] = 0x1F;
+        break;
+    case '?':
+        out[0] = 0x0E;
+        out[1] = 0x11;
+        out[2] = 0x01;
+        out[3] = 0x02;
+        out[4] = 0x04;
+        out[6] = 0x04;
+        break;
+    case '0':
+        out[0] = 0x0E;
+        out[1] = 0x11;
+        out[2] = 0x13;
+        out[3] = 0x15;
+        out[4] = 0x19;
+        out[5] = 0x11;
+        out[6] = 0x0E;
+        break;
+    case '1':
+        out[0] = 0x04;
+        out[1] = 0x0C;
+        out[2] = 0x04;
+        out[3] = 0x04;
+        out[4] = 0x04;
+        out[5] = 0x04;
+        out[6] = 0x0E;
+        break;
+    case '2':
+        out[0] = 0x0E;
+        out[1] = 0x11;
+        out[2] = 0x01;
+        out[3] = 0x02;
+        out[4] = 0x04;
+        out[5] = 0x08;
+        out[6] = 0x1F;
+        break;
+    case '3':
+        out[0] = 0x0E;
+        out[1] = 0x11;
+        out[2] = 0x01;
+        out[3] = 0x06;
+        out[4] = 0x01;
+        out[5] = 0x11;
+        out[6] = 0x0E;
+        break;
+    case '4':
+        out[0] = 0x02;
+        out[1] = 0x06;
+        out[2] = 0x0A;
+        out[3] = 0x12;
+        out[4] = 0x1F;
+        out[5] = 0x02;
+        out[6] = 0x02;
+        break;
+    case '5':
+        out[0] = 0x1F;
+        out[1] = 0x10;
+        out[2] = 0x1E;
+        out[3] = 0x01;
+        out[4] = 0x01;
+        out[5] = 0x11;
+        out[6] = 0x0E;
+        break;
+    case '6':
+        out[0] = 0x06;
+        out[1] = 0x08;
+        out[2] = 0x10;
+        out[3] = 0x1E;
+        out[4] = 0x11;
+        out[5] = 0x11;
+        out[6] = 0x0E;
+        break;
+    case '7':
+        out[0] = 0x1F;
+        out[1] = 0x01;
+        out[2] = 0x02;
+        out[3] = 0x04;
+        out[4] = 0x08;
+        out[5] = 0x08;
+        out[6] = 0x08;
+        break;
+    case '8':
+        out[0] = 0x0E;
+        out[1] = 0x11;
+        out[2] = 0x11;
+        out[3] = 0x0E;
+        out[4] = 0x11;
+        out[5] = 0x11;
+        out[6] = 0x0E;
+        break;
+    case '9':
+        out[0] = 0x0E;
+        out[1] = 0x11;
+        out[2] = 0x11;
+        out[3] = 0x0F;
+        out[4] = 0x01;
+        out[5] = 0x02;
+        out[6] = 0x0C;
+        break;
+    case 'A':
+        out[0] = 0x0E;
+        out[1] = 0x11;
+        out[2] = 0x11;
+        out[3] = 0x1F;
+        out[4] = 0x11;
+        out[5] = 0x11;
+        out[6] = 0x11;
+        break;
+    case 'B':
+        out[0] = 0x1E;
+        out[1] = 0x11;
+        out[2] = 0x11;
+        out[3] = 0x1E;
+        out[4] = 0x11;
+        out[5] = 0x11;
+        out[6] = 0x1E;
+        break;
+    case 'C':
+        out[0] = 0x0E;
+        out[1] = 0x11;
+        out[2] = 0x10;
+        out[3] = 0x10;
+        out[4] = 0x10;
+        out[5] = 0x11;
+        out[6] = 0x0E;
+        break;
+    case 'D':
+        out[0] = 0x1C;
+        out[1] = 0x12;
+        out[2] = 0x11;
+        out[3] = 0x11;
+        out[4] = 0x11;
+        out[5] = 0x12;
+        out[6] = 0x1C;
+        break;
+    case 'E':
+        out[0] = 0x1F;
+        out[1] = 0x10;
+        out[2] = 0x10;
+        out[3] = 0x1E;
+        out[4] = 0x10;
+        out[5] = 0x10;
+        out[6] = 0x1F;
+        break;
+    case 'F':
+        out[0] = 0x1F;
+        out[1] = 0x10;
+        out[2] = 0x10;
+        out[3] = 0x1E;
+        out[4] = 0x10;
+        out[5] = 0x10;
+        out[6] = 0x10;
+        break;
+    case 'G':
+        out[0] = 0x0E;
+        out[1] = 0x11;
+        out[2] = 0x10;
+        out[3] = 0x17;
+        out[4] = 0x11;
+        out[5] = 0x11;
+        out[6] = 0x0F;
+        break;
+    case 'H':
+        out[0] = 0x11;
+        out[1] = 0x11;
+        out[2] = 0x11;
+        out[3] = 0x1F;
+        out[4] = 0x11;
+        out[5] = 0x11;
+        out[6] = 0x11;
+        break;
+    case 'I':
+        out[0] = 0x0E;
+        out[1] = 0x04;
+        out[2] = 0x04;
+        out[3] = 0x04;
+        out[4] = 0x04;
+        out[5] = 0x04;
+        out[6] = 0x0E;
+        break;
+    case 'J':
+        out[0] = 0x07;
+        out[1] = 0x02;
+        out[2] = 0x02;
+        out[3] = 0x02;
+        out[4] = 0x02;
+        out[5] = 0x12;
+        out[6] = 0x0C;
+        break;
+    case 'K':
+        out[0] = 0x11;
+        out[1] = 0x12;
+        out[2] = 0x14;
+        out[3] = 0x18;
+        out[4] = 0x14;
+        out[5] = 0x12;
+        out[6] = 0x11;
+        break;
+    case 'L':
+        out[0] = 0x10;
+        out[1] = 0x10;
+        out[2] = 0x10;
+        out[3] = 0x10;
+        out[4] = 0x10;
+        out[5] = 0x10;
+        out[6] = 0x1F;
+        break;
+    case 'M':
+        out[0] = 0x11;
+        out[1] = 0x1B;
+        out[2] = 0x15;
+        out[3] = 0x15;
+        out[4] = 0x11;
+        out[5] = 0x11;
+        out[6] = 0x11;
+        break;
+    case 'N':
+        out[0] = 0x11;
+        out[1] = 0x19;
+        out[2] = 0x15;
+        out[3] = 0x13;
+        out[4] = 0x11;
+        out[5] = 0x11;
+        out[6] = 0x11;
+        break;
+    case 'O':
+        out[0] = 0x0E;
+        out[1] = 0x11;
+        out[2] = 0x11;
+        out[3] = 0x11;
+        out[4] = 0x11;
+        out[5] = 0x11;
+        out[6] = 0x0E;
+        break;
+    case 'P':
+        out[0] = 0x1E;
+        out[1] = 0x11;
+        out[2] = 0x11;
+        out[3] = 0x1E;
+        out[4] = 0x10;
+        out[5] = 0x10;
+        out[6] = 0x10;
+        break;
+    case 'Q':
+        out[0] = 0x0E;
+        out[1] = 0x11;
+        out[2] = 0x11;
+        out[3] = 0x11;
+        out[4] = 0x15;
+        out[5] = 0x12;
+        out[6] = 0x0D;
+        break;
+    case 'R':
+        out[0] = 0x1E;
+        out[1] = 0x11;
+        out[2] = 0x11;
+        out[3] = 0x1E;
+        out[4] = 0x14;
+        out[5] = 0x12;
+        out[6] = 0x11;
+        break;
+    case 'S':
+        out[0] = 0x0F;
+        out[1] = 0x10;
+        out[2] = 0x10;
+        out[3] = 0x0E;
+        out[4] = 0x01;
+        out[5] = 0x01;
+        out[6] = 0x1E;
+        break;
+    case 'T':
+        out[0] = 0x1F;
+        out[1] = 0x04;
+        out[2] = 0x04;
+        out[3] = 0x04;
+        out[4] = 0x04;
+        out[5] = 0x04;
+        out[6] = 0x04;
+        break;
+    case 'U':
+        out[0] = 0x11;
+        out[1] = 0x11;
+        out[2] = 0x11;
+        out[3] = 0x11;
+        out[4] = 0x11;
+        out[5] = 0x11;
+        out[6] = 0x0E;
+        break;
+    case 'V':
+        out[0] = 0x11;
+        out[1] = 0x11;
+        out[2] = 0x11;
+        out[3] = 0x11;
+        out[4] = 0x11;
+        out[5] = 0x0A;
+        out[6] = 0x04;
+        break;
+    case 'W':
+        out[0] = 0x11;
+        out[1] = 0x11;
+        out[2] = 0x11;
+        out[3] = 0x15;
+        out[4] = 0x15;
+        out[5] = 0x1B;
+        out[6] = 0x11;
+        break;
+    case 'X':
+        out[0] = 0x11;
+        out[1] = 0x11;
+        out[2] = 0x0A;
+        out[3] = 0x04;
+        out[4] = 0x0A;
+        out[5] = 0x11;
+        out[6] = 0x11;
+        break;
+    case 'Y':
+        out[0] = 0x11;
+        out[1] = 0x11;
+        out[2] = 0x0A;
+        out[3] = 0x04;
+        out[4] = 0x04;
+        out[5] = 0x04;
+        out[6] = 0x04;
+        break;
+    case 'Z':
+        out[0] = 0x1F;
+        out[1] = 0x01;
+        out[2] = 0x02;
+        out[3] = 0x04;
+        out[4] = 0x08;
+        out[5] = 0x10;
+        out[6] = 0x1F;
+        break;
+    default:
+        glyph_5x7('?', out);
+        break;
+    }
+}
+
+#if defined(__APPLE__) && defined(__MACH__)
+static const char overlay_font_path[] = "/Users/zyl/codes/mygithub/FFmpeg/resource/JetBrainsMono-Regular.ttf";
+
+static CFStringRef overlay_create_string(const char *s)
+{
+    CFStringRef str;
+
+    if (!s || !s[0])
+        return NULL;
+
+    str = CFStringCreateWithCString(kCFAllocatorDefault, s, kCFStringEncodingUTF8);
+    if (str)
+        return str;
+
+    return CFStringCreateWithBytes(kCFAllocatorDefault, (const UInt8 *)s, (CFIndex)strlen(s),
+                                   kCFStringEncodingISOLatin1, false);
+}
+
+static int overlay_font_px_for_viewport(const SDL_Rect *viewport, int scale)
+{
+    int base_px;
+
+    if (!viewport)
+        return 18;
+
+    base_px = viewport->h / 45;
+    if (base_px < 18)
+        base_px = 18;
+    if (base_px > 32)
+        base_px = 32;
+    if (scale < 1)
+        scale = 1;
+
+    return base_px * scale;
+}
+
+static CTFontRef overlay_font_get(int pixel_size)
+{
+    static CTFontRef font;
+    static int cached_px;
+    static int logged;
+
+    if (pixel_size < 6)
+        pixel_size = 6;
+
+    if (font && cached_px == pixel_size)
+        return font;
+
+    if (font) {
+        CFRelease(font);
+        font = NULL;
+    }
+    logged = 0;
+
+    cached_px = pixel_size;
+
+    CFURLRef url = CFURLCreateFromFileSystemRepresentation(kCFAllocatorDefault,
+                                                           (const UInt8 *)overlay_font_path,
+                                                           (CFIndex)strlen(overlay_font_path),
+                                                           false);
+    if (!url)
+        return NULL;
+
+    {
+        CFErrorRef err = NULL;
+        if (!CTFontManagerRegisterFontsForURL(url, kCTFontManagerScopeProcess, &err)) {
+            if (err)
+                CFRelease(err);
+        }
+    }
+
+    CGDataProviderRef dp = CGDataProviderCreateWithURL(url);
+    CFRelease(url);
+    if (!dp)
+        return NULL;
+
+    CGFontRef cgfont = CGFontCreateWithDataProvider(dp);
+    CGDataProviderRelease(dp);
+    if (!cgfont) {
+        av_log(NULL, AV_LOG_WARNING, "SEI overlay font parse failed: %s\n", overlay_font_path);
+        return NULL;
+    }
+
+    font = CTFontCreateWithGraphicsFont(cgfont, (CGFloat)pixel_size, NULL, NULL);
+    CGFontRelease(cgfont);
+
+    if (font && !logged) {
+        CFStringRef name = CTFontCopyFullName(font);
+        if (name) {
+            char buf[256];
+            if (CFStringGetCString(name, buf, sizeof(buf), kCFStringEncodingUTF8))
+                av_log(NULL, AV_LOG_INFO, "SEI overlay font: %s (%dpx)\n", buf, pixel_size);
+            CFRelease(name);
+        } else {
+            av_log(NULL, AV_LOG_INFO, "SEI overlay font loaded (%dpx): %s\n", pixel_size, overlay_font_path);
+        }
+        logged = 1;
+    }
+    return font;
+}
+
+static int overlay_measure_line(CTFontRef font, const char *utf8, int *out_w, int *out_h, CGFloat *out_ascent, CGFloat *out_descent)
+{
+    double w;
+    CGFloat ascent = 0, descent = 0, leading = 0;
+    CFStringRef str;
+    CFDictionaryRef attrs;
+    CFAttributedStringRef attr_str;
+    CTLineRef line;
+    const void *keys[2];
+    const void *values[2];
+
+    if (!out_w || !out_h)
+        return AVERROR(EINVAL);
+    *out_w = 0;
+    *out_h = 0;
+    if (out_ascent)
+        *out_ascent = 0;
+    if (out_descent)
+        *out_descent = 0;
+
+    if (!font || !utf8 || !utf8[0])
+        return 0;
+
+    str = overlay_create_string(utf8);
+    if (!str)
+        return 0;
+
+    keys[0] = kCTFontAttributeName;
+    values[0] = font;
+    keys[1] = kCTForegroundColorFromContextAttributeName;
+    values[1] = kCFBooleanTrue;
+    attrs = CFDictionaryCreate(kCFAllocatorDefault, keys, values, 2,
+                               &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+    if (!attrs) {
+        CFRelease(str);
+        return 0;
+    }
+
+    attr_str = CFAttributedStringCreate(kCFAllocatorDefault, str, attrs);
+    CFRelease(attrs);
+    CFRelease(str);
+    if (!attr_str)
+        return 0;
+
+    line = CTLineCreateWithAttributedString(attr_str);
+    CFRelease(attr_str);
+    if (!line)
+        return 0;
+
+    w = CTLineGetTypographicBounds(line, &ascent, &descent, &leading);
+    CFRelease(line);
+
+    if (w < 0)
+        w = 0;
+    if (ascent < 0)
+        ascent = 0;
+    if (descent < 0)
+        descent = 0;
+
+    *out_w = (int)ceil(w);
+    *out_h = (int)ceil(ascent + descent) + 2;
+    if (out_ascent)
+        *out_ascent = ascent;
+    if (out_descent)
+        *out_descent = descent;
+    return 0;
+}
+
+static SDL_Texture *overlay_render_line(SDL_Renderer *r, CTFontRef font, const char *utf8, int *out_w, int *out_h)
+{
+    CFStringRef str;
+    CFDictionaryRef attrs;
+    CFAttributedStringRef attr_str;
+    CTLineRef line;
+    const void *keys[2];
+    const void *values[2];
+    int w = 0, h = 0;
+    CGFloat ascent = 0, descent = 0;
+    uint8_t *pixels = NULL;
+    int pitch;
+    CGColorSpaceRef cs = NULL;
+    CGContextRef ctx = NULL;
+    SDL_Texture *tex = NULL;
+
+    if (out_w)
+        *out_w = 0;
+    if (out_h)
+        *out_h = 0;
+
+    if (!r || !font || !utf8 || !utf8[0])
+        return NULL;
+
+    overlay_measure_line(font, utf8, &w, &h, &ascent, &descent);
+    if (w <= 0 || h <= 0)
+        return NULL;
+
+    pitch = w * 4;
+    pixels = av_mallocz((size_t)pitch * (size_t)h);
+    if (!pixels)
+        return NULL;
+
+    cs = CGColorSpaceCreateDeviceRGB();
+    if (!cs)
+        goto fail;
+
+    ctx = CGBitmapContextCreate(pixels, (size_t)w, (size_t)h, 8, (size_t)pitch, cs,
+                                kCGBitmapByteOrder32Little | kCGImageAlphaPremultipliedFirst);
+    if (!ctx)
+        goto fail;
+
+    CGContextSetAllowsAntialiasing(ctx, 1);
+    CGContextSetShouldAntialias(ctx, 1);
+    CGContextSetRGBFillColor(ctx, 1.0, 1.0, 1.0, 1.0);
+    CGContextSetTextDrawingMode(ctx, kCGTextFill);
+
+    CGContextTranslateCTM(ctx, 0, (CGFloat)h);
+    CGContextScaleCTM(ctx, 1.0, -1.0);
+    CGContextSetTextMatrix(ctx, CGAffineTransformIdentity);
+    CGContextSetTextPosition(ctx, 0, descent + 1);
+
+    str = overlay_create_string(utf8);
+    if (!str)
+        goto fail;
+
+    keys[0] = kCTFontAttributeName;
+    values[0] = font;
+    keys[1] = kCTForegroundColorFromContextAttributeName;
+    values[1] = kCFBooleanTrue;
+    attrs = CFDictionaryCreate(kCFAllocatorDefault, keys, values, 2,
+                               &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+    if (!attrs) {
+        CFRelease(str);
+        goto fail;
+    }
+
+    attr_str = CFAttributedStringCreate(kCFAllocatorDefault, str, attrs);
+    CFRelease(attrs);
+    CFRelease(str);
+    if (!attr_str)
+        goto fail;
+
+    line = CTLineCreateWithAttributedString(attr_str);
+    CFRelease(attr_str);
+    if (!line)
+        goto fail;
+
+    CTLineDraw(line, ctx);
+    CFRelease(line);
+
+    tex = SDL_CreateTexture(r, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STATIC, w, h);
+    if (!tex)
+        goto fail;
+
+    SDL_SetTextureBlendMode(tex, SDL_BLENDMODE_BLEND);
+    if (SDL_UpdateTexture(tex, NULL, pixels, pitch) < 0)
+        goto fail;
+
+    if (out_w)
+        *out_w = w;
+    if (out_h)
+        *out_h = h;
+
+    CGContextRelease(ctx);
+    CGColorSpaceRelease(cs);
+    av_free(pixels);
+    return tex;
+
+fail:
+    if (tex) {
+        SDL_DestroyTexture(tex);
+        tex = NULL;
+    }
+    if (ctx)
+        CGContextRelease(ctx);
+    if (cs)
+        CGColorSpaceRelease(cs);
+    av_free(pixels);
+    return NULL;
+}
+#endif
+
+static void draw_text_lines(SDL_Renderer *r, const SDL_Rect *viewport, char lines[][256], int nb_lines, int font_px)
+{
+    int i, x0, y0;
+    int scale = 1;
+    int char_w;
+    int char_h;
+    int margin;
+    int max_w = 0;
+    SDL_Rect bg;
+
+    if (!r || !viewport || nb_lines <= 0)
+        return;
+    if (font_px < 8)
+        font_px = 8;
+
+    scale = FFMAX(1, font_px / 12);
+    char_w = 6 * scale;
+    char_h = 8 * scale;
+    margin = 6 * scale;
+
+#if defined(__APPLE__) && defined(__MACH__)
+    {
+        CTFontRef font = overlay_font_get(font_px);
+        int margin_px = FFMAX(12, font_px / 2);
+        int gap_px = FFMAX(4, font_px / 3);
+        int max_w_px = 0;
+        int total_h_px = 0;
+        int max_h_px = (viewport->h * 70) / 100;
+        int max_content_h_px;
+        int draw_lines = 0;
+        SDL_Rect bg2;
+
+        if (font) {
+            max_h_px = av_clip(max_h_px, font_px + margin_px, viewport->h - margin_px);
+            max_content_h_px = FFMAX(1, max_h_px - margin_px);
+
+            for (i = 0; i < nb_lines; i++) {
+                int w = 0, h = 0;
+                overlay_measure_line(font, lines[i], &w, &h, NULL, NULL);
+                if (w > max_w_px)
+                    max_w_px = w;
+                if (h <= 0)
+                    h = 1;
+                if (total_h_px + h > max_content_h_px)
+                    break;
+                total_h_px += h;
+                draw_lines++;
+                if (i + 1 < nb_lines && total_h_px + gap_px <= max_content_h_px)
+                    total_h_px += gap_px;
+            }
+
+            if (draw_lines <= 0)
+                draw_lines = 1;
+
+            x0 = viewport->x + margin_px;
+            y0 = viewport->y + margin_px;
+
+            bg2.x = x0 - margin_px / 2;
+            bg2.y = y0 - margin_px / 2;
+            bg2.w = FFMIN(max_w_px + margin_px, viewport->w - margin_px);
+            bg2.h = FFMIN(total_h_px + margin_px, max_h_px);
+
+            SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+            SDL_SetRenderDrawColor(r, 0, 0, 0, 200);
+            SDL_RenderFillRect(r, &bg2);
+
+            for (i = 0; i < draw_lines; i++) {
+                int w = 0, h = 0;
+                SDL_Texture *tex = overlay_render_line(r, font, lines[i], &w, &h);
+                if (tex) {
+                    SDL_Rect dst = { x0, y0, w, h };
+                    SDL_RenderCopyEx(r, tex, NULL, &dst, 0, NULL, SDL_FLIP_VERTICAL);
+                    SDL_DestroyTexture(tex);
+                }
+                if (h <= 0)
+                    h = 1;
+                y0 += h + gap_px;
+                if (y0 >= bg2.y + bg2.h)
+                    break;
+            }
+            return;
+        }
+    }
+#endif
+
+    for (i = 0; i < nb_lines; i++) {
+        int w = (int)strlen(lines[i]) * char_w;
+        if (w > max_w)
+            max_w = w;
+    }
+
+    x0 = viewport->x + margin;
+    y0 = viewport->y + margin;
+
+    bg.x = x0 - margin / 2;
+    bg.y = y0 - margin / 2;
+    bg.w = FFMIN(max_w + margin, viewport->w - margin);
+    bg.h = FFMIN(nb_lines * char_h + margin, viewport->h - margin);
+
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(r, 0, 0, 0, 200);
+    SDL_RenderFillRect(r, &bg);
+
+    for (i = 0; i < nb_lines; i++) {
+        int j;
+        int y = y0 + i * char_h;
+        const char *s = lines[i];
+
+        for (j = 0; s[j]; j++) {
+            uint8_t rows[7];
+            int ry, rx;
+            int x = x0 + j * char_w;
+
+            glyph_5x7(s[j], rows);
+
+            for (ry = 0; ry < 7; ry++) {
+                for (rx = 0; rx < 5; rx++) {
+                    if (rows[ry] & (1 << (4 - rx))) {
+                        SDL_Rect p_shadow = { x + rx * scale + 1, y + ry * scale + 1, scale, scale };
+                        SDL_Rect p = { x + rx * scale, y + ry * scale, scale, scale };
+                        SDL_SetRenderDrawColor(r, 0, 0, 0, 200);
+                        SDL_RenderFillRect(r, &p_shadow);
+                        SDL_SetRenderDrawColor(r, 255, 255, 255, 255);
+                        SDL_RenderFillRect(r, &p);
+                    }
+                }
+            }
+        }
+    }
+}
+
+static void extract_frame_sei_text(const AVFrame *frame, char *dst, int dst_size)
+{
+    const AVFrameSideData *sd;
+    const uint8_t *payload;
+    int payload_size;
+    int i, out_len;
+
+    if (!dst || dst_size <= 0)
+        return;
+    dst[0] = 0;
+    if (!frame)
+        return;
+
+    sd = av_frame_get_side_data(frame, AV_FRAME_DATA_SEI_UNREGISTERED);
+    if (!sd || sd->size <= 16)
+        return;
+
+    payload = sd->data + 16;
+    payload_size = sd->size - 16;
+
+    while (payload_size > 0 && (payload[payload_size - 1] == 0 || payload[payload_size - 1] == '\n' || payload[payload_size - 1] == '\r'))
+        payload_size--;
+
+    out_len = FFMIN(payload_size, dst_size - 1);
+    for (i = 0; i < out_len; i++) {
+        unsigned char c = payload[i];
+        if (c == '\n' || c == '\r' || c == '\t')
+            dst[i] = ' ';
+        else if (c < 0x20)
+            dst[i] = '.';
+        else
+            dst[i] = (char)c;
+    }
+    dst[out_len] = 0;
+}
+
 static int frame_queue_init(FrameQueue *f, PacketQueue *pktq, int max_size, int keep_last)
 {
     int i;
@@ -1046,6 +2226,36 @@ static void video_image_display(VideoState *is)
         }
 #endif
     }
+
+    if (vp->sei_text[0]) {
+        char pretty[4096];
+        char lines[64][256];
+        int nb_lines;
+        int max_cols;
+        int font_px = 12;
+        int char_w = 6;
+        int margin = 12;
+
+        jsonish_pretty_print(vp->sei_text, pretty, sizeof(pretty));
+        overlay_rewrite_ts_us(pretty, sizeof(pretty));
+#if defined(__APPLE__) && defined(__MACH__)
+        {
+            font_px = overlay_font_px_for_viewport(&rect, 1);
+            CTFontRef font = overlay_font_get(font_px);
+            if (font) {
+                int sw = 0, sh = 0;
+                overlay_measure_line(font, "MMMMMMMMMM", &sw, &sh, NULL, NULL);
+                if (sw > 0)
+                    char_w = FFMAX(4, sw / 10);
+            }
+        }
+        margin = FFMAX(margin, font_px / 2);
+#endif
+        max_cols = FFMAX(8, (rect.w - margin) / char_w);
+        nb_lines = wrap_lines(pretty, lines, FF_ARRAY_ELEMS(lines), max_cols);
+        if (nb_lines > 0)
+            draw_text_lines(renderer, &rect, lines, nb_lines, font_px);
+    }
 }
 
 static inline int compute_mod(int a, int b)
@@ -1365,11 +2575,42 @@ static int video_open(VideoState *is)
     return 0;
 }
 
+static void update_window_title(VideoState *is)
+{
+    Frame *vp;
+    char title[1024];
+    const char *base;
+    static char last_title[1024];
+
+    if (!window || display_disable)
+        return;
+
+    base = window_title ? window_title : input_filename;
+    if (!base)
+        base = program_name;
+
+    vp = NULL;
+    if (is && is->video_st && is->pictq.rindex_shown)
+        vp = frame_queue_peek_last(&is->pictq);
+
+    if (vp && vp->sei_text[0])
+        snprintf(title, sizeof(title), "%s | SEI: %s", base, vp->sei_text);
+    else
+        snprintf(title, sizeof(title), "%s", base);
+
+    if (strcmp(last_title, title)) {
+        av_strlcpy(last_title, title, sizeof(last_title));
+        SDL_SetWindowTitle(window, title);
+    }
+}
+
 /* display the current picture, if any */
 static void video_display(VideoState *is)
 {
     if (!is->width)
         video_open(is);
+
+    update_window_title(is);
 
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
     SDL_RenderClear(renderer);
@@ -1762,6 +3003,7 @@ static int queue_picture(VideoState *is, AVFrame *src_frame, double pts, double 
 
     vp->sar = src_frame->sample_aspect_ratio;
     vp->uploaded = 0;
+    extract_frame_sei_text(src_frame, vp->sei_text, sizeof(vp->sei_text));
 
     vp->width = src_frame->width;
     vp->height = src_frame->height;

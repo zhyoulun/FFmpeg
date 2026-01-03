@@ -76,6 +76,8 @@ const char *avdevice_license(void);
  */
 void avdevice_register_all(void);
 
+int avdevice_input_info_query_json(char *dst, int dst_size);
+
 /**
  * Audio input devices iterator.
  *
@@ -389,6 +391,8 @@ int avdevice_list_input_sources(const AVInputFormat *device, const char *device_
                                 AVDictionary *device_options, AVDeviceInfoList **device_list);
 int avdevice_list_output_sinks(const AVOutputFormat *device, const char *device_name,
                                AVDictionary *device_options, AVDeviceInfoList **device_list);
+
+int avdevice_input_info_query_json(char *dst, int dst_size);
 
 /**
  * @}

@@ -1928,6 +1928,13 @@ const OptionDef options[] = {
         "set this video output stream to be a heartbeat stream for "
         "fix_sub_duration, according to which subtitles should be split at "
         "random access points" },
+    { "enable_sei_input_info",      OPT_TYPE_BOOL,   OPT_VIDEO | OPT_EXPERT | OPT_PERSTREAM | OPT_OUTPUT,
+        { .off = OFFSET(enable_sei_input_info) },
+        "inject per-frame input info as user_data_unregistered SEI (libx264/libx265 only)" },
+    { "enable-sei-input-info",      OPT_TYPE_BOOL,   OPT_VIDEO | OPT_EXPERT | OPT_PERSTREAM | OPT_OUTPUT | OPT_HAS_CANON,
+        { .off = OFFSET(enable_sei_input_info) },
+        "alias for -enable_sei_input_info", "",
+        .u1.name_canon = "enable_sei_input_info", },
 
     /* audio options */
     { "aframes",          OPT_TYPE_FUNC,    OPT_AUDIO | OPT_FUNC_ARG | OPT_PERFILE | OPT_OUTPUT | OPT_EXPERT | OPT_HAS_CANON,

@@ -17,7 +17,9 @@
  */
 
 #include <math.h>
+#include <errno.h>
 #include <stdint.h>
+#include <string.h>
 
 #include "ffmpeg.h"
 
@@ -31,12 +33,52 @@
 #include "libavutil/intreadwrite.h"
 #include "libavutil/log.h"
 #include "libavutil/mem.h"
+#include "libavutil/opt.h"
 #include "libavutil/pixdesc.h"
 #include "libavutil/rational.h"
 #include "libavutil/time.h"
 #include "libavutil/timestamp.h"
 
 #include "libavcodec/avcodec.h"
+
+#if CONFIG_AVDEVICE
+#include "libavdevice/avdevice.h"
+#endif
+
+enum {
+    SEI_INPUT_INFO_MAX       = 512,
+    SEI_INPUT_INFO_UUID_SIZE = 16,
+    SEI_INPUT_INFO_JSON_MAX  = SEI_INPUT_INFO_MAX - SEI_INPUT_INFO_UUID_SIZE,
+};
+
+static int sei_input_info_attach(AVFrame *frame)
+{
+    static const uint8_t uuid[SEI_INPUT_INFO_UUID_SIZE] = {
+        0x65, 0xf6, 0x46, 0x9f, 0x93, 0x4a, 0x4d, 0xa0,
+        0xb4, 0x4c, 0x13, 0x1a, 0x58, 0xbb, 0x74, 0xc8,
+    };
+    char json[SEI_INPUT_INFO_JSON_MAX + 1];
+    AVFrameSideData *sd;
+    int json_len;
+
+#if CONFIG_AVDEVICE
+    json_len = avdevice_input_info_query_json(json, sizeof(json));
+#else
+    return AVERROR(ENOSYS);
+#endif
+    if (json_len < 0)
+        return json_len;
+
+    sd = av_frame_new_side_data(frame, AV_FRAME_DATA_SEI_UNREGISTERED,
+                                SEI_INPUT_INFO_UUID_SIZE + json_len);
+    if (!sd)
+        return AVERROR(ENOMEM);
+
+    memcpy(sd->data, uuid, SEI_INPUT_INFO_UUID_SIZE);
+    memcpy(sd->data + SEI_INPUT_INFO_UUID_SIZE, json, json_len);
+
+    return 0;
+}
 
 typedef struct EncoderPriv {
     Encoder        e;
@@ -326,6 +368,12 @@ int enc_open(void *opaque, const AVFrame *frame)
         enc_ctx->flags |= AV_CODEC_FLAG_COPY_OPAQUE;
 
     enc_ctx->flags |= AV_CODEC_FLAG_FRAME_DURATION;
+
+    if (ost->enable_sei_input_info) {
+        ret = av_opt_set_int(enc_ctx->priv_data, "udu_sei", 1, 0);
+        if (ret < 0)
+            return ret;
+    }
 
     ret = hw_device_setup_for_encode(e, enc_ctx, frame ? frame->hw_frames_ctx : NULL);
     if (ret < 0) {
@@ -622,6 +670,20 @@ static int encode_frame(OutputFile *of, OutputStream *ost, AVFrame *frame,
         if (ost->enc_stats_pre.io)
             enc_stats_write(ost, &ost->enc_stats_pre, frame, NULL,
                             e->frames_encoded);
+
+        if (ost->enable_sei_input_info) {
+            ret = sei_input_info_attach(frame);
+            if (ret < 0 && ret != AVERROR(ENOMEM)) {
+                if (!ost->sei_input_info_warned) {
+                    av_log(e, AV_LOG_WARNING, "Failed to attach input-info SEI: %s\n",
+                           av_err2str(ret));
+                    ost->sei_input_info_warned = 1;
+                }
+                ret = 0;
+            }
+            if (ret < 0)
+                return ret;
+        }
 
         e->frames_encoded++;
         e->samples_encoded += frame->nb_samples;

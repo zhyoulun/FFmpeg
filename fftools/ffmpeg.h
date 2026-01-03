@@ -257,6 +257,8 @@ typedef struct OptionsContext {
     SpecifierOptList enc_stats_pre_fmt;
     SpecifierOptList enc_stats_post_fmt;
     SpecifierOptList mux_stats_fmt;
+
+    SpecifierOptList enable_sei_input_info;
 } OptionsContext;
 
 enum IFilterFlags {
@@ -628,6 +630,8 @@ typedef struct OutputStream {
 #endif
     int bitexact;
     int bits_per_raw_sample;
+    int enable_sei_input_info;
+    int sei_input_info_warned;
 
     AVRational frame_aspect_ratio;
 

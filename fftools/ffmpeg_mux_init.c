@@ -1518,6 +1518,30 @@ static int ost_add(Muxer *mux, const OptionsContext *o, enum AVMediaType type,
     opt_match_per_stream_int(ost, &o->fix_sub_duration_heartbeat,
                              oc, st, &ost->fix_sub_duration_heartbeat);
 
+    opt_match_per_stream_int(ost, &o->enable_sei_input_info,
+                             oc, st, &ost->enable_sei_input_info);
+
+    if (ost->enable_sei_input_info) {
+        const char *enc_name = ost->enc && ost->enc->enc_ctx && ost->enc->enc_ctx->codec ?
+                               ost->enc->enc_ctx->codec->name : NULL;
+
+        if (type != AVMEDIA_TYPE_VIDEO) {
+            av_log(ost, AV_LOG_FATAL, "-enable_sei_input_info is only supported for video streams\n");
+            ret = AVERROR(EINVAL);
+            goto fail;
+        }
+        if (!ost->enc) {
+            av_log(ost, AV_LOG_FATAL, "-enable_sei_input_info is not supported with streamcopy\n");
+            ret = AVERROR(EINVAL);
+            goto fail;
+        }
+        if (!enc_name || (strcmp(enc_name, "libx264") && strcmp(enc_name, "libx265"))) {
+            av_log(ost, AV_LOG_FATAL, "-enable_sei_input_info requires libx264 or libx265\n");
+            ret = AVERROR(EINVAL);
+            goto fail;
+        }
+    }
+
     if (oc->oformat->flags & AVFMT_GLOBALHEADER && ost->enc)
         ost->enc->enc_ctx->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
 

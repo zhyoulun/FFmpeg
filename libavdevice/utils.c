@@ -17,10 +17,19 @@
  */
 
 #include "internal.h"
+#include "avdevice.h"
+#include <errno.h>
+#include <inttypes.h>
+#include <stdio.h>
 #include "libavutil/mem.h"
 #include "libavutil/opt.h"
+#include "libavutil/time.h"
 #include "libavformat/avformat.h"
 #include "libavformat/demux.h"
+
+#if defined(__APPLE__)
+#include <CoreGraphics/CoreGraphics.h>
+#endif
 
 int ff_alloc_input_device_context(AVFormatContext **avctx, const AVInputFormat *iformat, const char *format)
 {
@@ -58,4 +67,41 @@ int ff_alloc_input_device_context(AVFormatContext **avctx, const AVInputFormat *
   error:
     avformat_free_context(s);
     return ret;
+}
+
+int avdevice_input_info_query_json(char *dst, int dst_size)
+{
+    int64_t t_us;
+    int len;
+
+    if (!dst || dst_size <= 0)
+        return AVERROR(EINVAL);
+
+    t_us = av_gettime();
+
+#if defined(__APPLE__)
+    {
+        CGRect bounds = CGDisplayBounds(CGMainDisplayID());
+        CGEventRef ev = CGEventCreate(NULL);
+        CGPoint p = { 0 };
+
+        if (ev) {
+            p = CGEventGetLocation(ev);
+            CFRelease(ev);
+        }
+
+        len = snprintf(dst, dst_size,
+                       "{\"t_us\":%" PRId64 ",\"mx\":%.0f,\"my\":%.0f,\"w\":%.0f,\"h\":%.0f}",
+                       t_us, p.x, p.y, bounds.size.width, bounds.size.height);
+    }
+#else
+    len = snprintf(dst, dst_size, "{\"t_us\":%" PRId64 "}", t_us);
+#endif
+
+    if (len < 0)
+        return AVERROR(EINVAL);
+    if (len >= dst_size)
+        return AVERROR(ENOSPC);
+
+    return len;
 }
